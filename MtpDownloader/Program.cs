@@ -10,7 +10,11 @@ using NDesk.Options;
  * 
  * Instead, MediaDevices library will show these file systems as different folders under the device root folder.
  * 
- * Each storage, esch folder and each file is internally identified by an ID, which is quite useless for the user (e.g."o32D9")
+ * Each storage, each folder and each file is internally identified by an ID, which is quite useless for the user (e.g."o32D9")
+ * 
+ * Each device is identified by some terribly long DeviceId; we prefer identofy them by Description.
+ * 
+ * A configuration file is created and read from AppData\Local
  */
 namespace MtpDownloader
 {
@@ -21,12 +25,15 @@ namespace MtpDownloader
         public const string PROGRAM_NAME = "MtpDownloader";
         public const string VERSION = "0.1";
 
+        public static string INI_FILE_NAME = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), PROGRAM_NAME + ".ini");
+
         //command line options
         OptionSet optionSet;
         public HashSet<Action> actions = new HashSet<Action>();
-        public string deviceId = null;
+        public string deviceDescription = null;
         public string fileNamePattern = "*"; //FIXME *.* ?
-        public long maxDays = -1;
+        public Boolean useMinDate = false;
+        public DateTime minDate;
         public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
@@ -49,9 +56,8 @@ namespace MtpDownloader
         {
             optionSet = CreateOptionSet();
             ParseCommandLine(optionSet, args);
-            var inifilename = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), PROGRAM_NAME + ".ini");
-            inifile = new Ini(inifilename);
-            if (!File.Exists(inifilename))
+            inifile = new Ini(INI_FILE_NAME);
+            if (!File.Exists(INI_FILE_NAME))
                 CreateDefaultIniFile();
         }
 
@@ -87,14 +93,14 @@ namespace MtpDownloader
                 {
                     foreach (var device in devices)
                     {
-                        Console.WriteLine(device.Description); //.DeviceId is ugly
+                        Console.WriteLine(device.Description);
                     }
                     return;
                 }
                 Console.WriteLine(devices.Count() + " devices connected.");
             }
 
-            using (var myDevice = (deviceId != null) ? devices.First(d => d.DeviceId == deviceId) : devices.First())
+            using (var myDevice = (deviceDescription != null) ? devices.First(d => d.Description == deviceDescription) : devices.First())
             {
                 myDevice.Connect();
 
@@ -157,7 +163,7 @@ namespace MtpDownloader
         void PrintUsage(OptionSet p)
         {
             Console.WriteLine("Usage: ");
-            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICEID] [-p PATTERN] [-days DAYS] [-delete] [-l] remotepath1 [remotepath2 ...] [-cp localpath]");
+            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-l] remotepath1 [remotepath2 ...] [-cp localpath]");
             Console.WriteLine("   " + PROGRAM_NAME + " -ld");
             Console.WriteLine("   " + PROGRAM_NAME + " -v");
             Console.WriteLine("   " + PROGRAM_NAME + " -h");
@@ -173,12 +179,13 @@ namespace MtpDownloader
         public OptionSet CreateOptionSet()
         {
             var p = new OptionSet() {
-                { "d|device=", "Select device with guid {DEVICEID}", v => deviceId = v },
+                { "d|device=", "Select device by {DESCRIPTION}", v => deviceDescription = v },
                 { "p|pattern=", "Select only files matching given {PATTERN}", v => fileNamePattern = v },
-                { "days=", "Select only files at most {DAYS} days old", (long v) => maxDays = v },
+                { "days=", "Select only files at most {DAYS} days old", (long v) => { minDate = DateTime.Today.AddDays(-v); useMinDate = true; } },
+                { "s|since=", "Select only files not older than {DATE}", v => { minDate = DateTime.Parse(v); useMinDate = true;        }    },
                 { "delete", "Delete selected files", v => actions.Add(Action.DeleteFiles) },
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
-                { "ld|list-devices", "List devices", v => actions.Add(Action.ListDevices) },
+                { "ld|list-devices", "List devices (i.e. their Description)", v => actions.Add(Action.ListDevices) },
                 { "cp|copy=", "Copy device files to PC folder", v => { actions.Add(Action.DownloadFiles); localFolder = v; } },
                 { "v|version", "Print program version", v => actions.Add(Action.PrintVersion) },
                 { "h|help",  "Print this message", v => actions.Add(Action.PrintHelp) },
@@ -241,20 +248,19 @@ namespace MtpDownloader
             var list = new List<string>();
             var directoryInfo = myDevice.GetDirectoryInfo(remoteFolder);
             var files = directoryInfo.EnumerateFiles(fileNamePattern);
-            if (maxDays < 0)
+            if (useMinDate)
             {
                 foreach (var f in files)
                 {
-                    list.Add(f.Name);
+                    if (f.CreationTime >= minDate)
+                        list.Add(f.Name);
                 }
             }
             else
             {
-                var maxTime = DateTime.Today.AddDays(-maxDays);
                 foreach (var f in files)
                 {
-                    if (f.CreationTime >= maxTime)
-                        list.Add(f.Name);
+                    list.Add(f.Name);
                 }
             }
             return list;

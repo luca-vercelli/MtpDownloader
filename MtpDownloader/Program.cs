@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using MediaDevices;
 using NDesk.Options;
@@ -13,7 +14,7 @@ using NDesk.Options;
  */
 namespace MtpDownloader
 {
-    public enum Action { PrintHelp, PrintVersion, ListFiles, DownloadFiles }
+    public enum Action { PrintHelp, PrintVersion, ListDevices, ListFiles, DownloadFiles }
 
     class Program
     {
@@ -23,36 +24,39 @@ namespace MtpDownloader
         //command line options
         OptionSet optionSet;
         public Action action = Action.DownloadFiles;
-        public bool deleteFiles = false;
-        public bool errorsInCommandLine = false;
         public string deviceId = null;
-        public string pattern = "*"; //FIXME *.* ?
-        public long days = -1;
-        public bool delete = false;
+        public string fileNamePattern = "*"; //FIXME *.* ?
+        public long maxDays = -1;
+        public bool deleteFiles = false;
         public string remoteFolder = "\\\\";
         public string localFolder = null;
+        public bool errorsInCommandLine = false;
 
-        /**
-         * Entry point
-         */
+        Ini inifile;
+
+        /// <summary>
+        /// Entry point
+        /// </summary>
         static void Main(string[] args)
         {
             Program program = new Program(args);
             program.Run();
         }
 
-        /**
-         * Constructor
-         */
+        /// <summary>
+        /// Constructor
+        /// </summary>
         public Program(string[] args)
         {
             optionSet = CreateOptionSet();
             ParseCommandLine(optionSet, args);
+            var inifilename = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), PROGRAM_NAME + ".ini");
+            inifile = new Ini(inifilename);
         }
 
-        /**
-         * Program execution entry point.
-         */
+        /// <summary>
+        /// Program execution entry point.
+        /// </summary>
         public void Run()
         {
             if (action == Action.PrintHelp || errorsInCommandLine)
@@ -67,7 +71,7 @@ namespace MtpDownloader
                 return;
             }
 
-            //Connect to MTP devices and pick up the first one
+            //Connect to MTP devices
             var devices = MediaDevice.GetDevices();
 
             if (devices.Count() == 0)
@@ -77,45 +81,34 @@ namespace MtpDownloader
             }
             else
             {
+                if (action == Action.ListDevices)
+                {
+                    foreach (var device in devices)
+                    {
+                        Console.WriteLine(device.DeviceId);
+                    }
+                    return;
+                }
                 Console.WriteLine(devices.Count() + " devices connected.");
             }
 
             using (var MyDevice = (deviceId != null) ? devices.First(d => d.DeviceId == deviceId) : devices.First())
             {
                 MyDevice.Connect();
-                /*
-                Console.WriteLine("Drives:");
-                Console.WriteLine(MyDevice.GetDrives());
-
-                Console.WriteLine("ContentLocations for folders:");
-                Console.WriteLine(MyDevice.GetContentLocations(ContentType.Folder));
-
-                Console.WriteLine("ContentLocations for generic file:");
-                Console.WriteLine(MyDevice.GetContentLocations(ContentType.GenericFile));
-
-                Console.WriteLine("GetDirectoryInfo.Files:");
-                Console.WriteLine(MyDevice.GetDirectoryInfo(remoteFolder).EnumerateFiles());
-                */
 
                 if (action == Action.ListFiles)
                 {
                     Console.WriteLine("Reading directory...");
-                    var DirectoryInfo = MyDevice.GetDirectoryInfo(remoteFolder);
-                    var directories = DirectoryInfo.EnumerateDirectories();
-                    foreach (var d in directories)
+
+                    foreach (var d in GetRemoteFoldersNames(MyDevice))
                     {
-                        //Console.WriteLine("FOLDER Id=" + d.Id); s10001
-                        Console.WriteLine(d.Name);
+                        Console.WriteLine(d);
                     }
 
-                    var files = DirectoryInfo.EnumerateFiles(pattern);
-                    foreach (var d in files)
+                    foreach (var f in GetRemoteFilesNames(MyDevice))
                     {
-                        //TODO filter on (date of)d.CreationTime
-                        Console.WriteLine(d.Name);
+                        Console.WriteLine(f);
                     }
-                    /*Console.WriteLine("'ls' feature not implemented yet...");
-                    */
 
                 }
                 else if (action == Action.DownloadFiles)
@@ -123,7 +116,7 @@ namespace MtpDownloader
                     Console.WriteLine("'cp' feature not implemented yet...");
                 }
 
-                if (delete)
+                if (deleteFiles)
                 {
                     Console.WriteLine("'delete' feature not implemented yet...");
                 }
@@ -131,47 +124,17 @@ namespace MtpDownloader
 
                 MyDevice.Disconnect();
             }
-                
 
-            /*
-            //Finding neccessary folder inside the root
-            var folder = (root.Files.FirstOrDefault() as PortableDeviceFolder).
-                Files.FirstOrDefault(x => x.Name == "Folder") as PortableDeviceFolder;
-
-            //Finding file inside the folder
-            var file = (folder as PortableDeviceFolder)?.Files?.FirstOrDefault(x => x.Name == "File");
-
-            //Transfering file into byte array
-            var fileIntoByteArr = MyDevice.DownloadFileToStream(file as PortableDeviceFile);
-
-            //Transfering file into file system
-            MyDevice.DownloadFile(file as PortableDeviceFile, "\\LOCALPATH");
-
-            //Transfering file rom file system into device folder
-            MyDevice.TransferContentToDevice("\\LOCALPATH", folder.Id);
-
-            //Transfering file from stream into device folder
-            var imgPath = "\\LOCALPATH";
-            var image = Image.FromFile(imgPath);
-            byte[] imageB;
-            using (var ms = new MemoryStream())
-            {
-                image.Save(ms, System.Drawing.Imaging.ImageFormat.Gif);
-                imageB = ms.ToArray();
-            }
-            MyDevice.TransferContentToDeviceFromStream("FILE NAME", new MemoryStream(imageB), folder.Id);
-            
-             */
         }
 
-        /**
-         * Print program usage
-         */
+        /// <summary>
+        /// Print program usage
+        /// </summary>
         void PrintUsage(OptionSet p)
         {
             Console.WriteLine("Usage: ");
             Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICEID] [-p PATTERN] [-days DAYS] [-delete] [-l remotepath|-cp remotepath localpath]");
-            Console.WriteLine("   " + PROGRAM_NAME + " -l");
+            Console.WriteLine("   " + PROGRAM_NAME + " -ld");
             Console.WriteLine("   " + PROGRAM_NAME + " -v");
             Console.WriteLine("   " + PROGRAM_NAME + " -h");
             Console.WriteLine("Download files from MTP source.");
@@ -180,26 +143,27 @@ namespace MtpDownloader
             p.WriteOptionDescriptions(Console.Out);
         }
 
-        /**
-         * Print version
-         */
+        /// <summary>
+        /// Print version
+        /// </summary>
         void PrintVersion()
         {
             Console.WriteLine(PROGRAM_NAME + " v." + VERSION);
         }
 
-        /**
-         * Create command line NDesk/Options
-         */
+        /// <summary>
+        /// Create command line NDesk/Options
+        /// </summary>
         public OptionSet CreateOptionSet()
         {
             var p = new OptionSet() {
                 { "d|device=", "Select device with guid {DEVICEID}", v => deviceId = v },
-                { "p|pattern=", "Select only files matching given {PATTERN}", v => pattern = v },
-                { "days=", "copy only files at most {DAYS} days old", (long v) => days = v },
-                { "delete", "delete selected files", v => delete = v != null },
+                { "p|pattern=", "Select only files matching given {PATTERN}", v => fileNamePattern = v },
+                { "days=", "Select only files at most {DAYS} days old", (long v) => maxDays = v },
+                { "delete", "Delete selected files", v => deleteFiles = v != null },
                 { "cp|copy", "list device content and exit", v => action = Action.DownloadFiles },
                 { "l|list|dir", "list device content and exit", v => action = Action.ListFiles },
+                { "ld|list-devices", "list devices and exit", v => action = Action.ListDevices },
                 { "v|version", "print version and exit", v => action = Action.PrintVersion },
                 { "h|help",  "show this message and exit", v => action = Action.PrintHelp },
                 };
@@ -207,10 +171,10 @@ namespace MtpDownloader
             return p;
         }
 
-        /**
-         * Parse command line NDesk/Options
-         * @return null on error
-         */
+        /// <summary>
+        /// Parse command line NDesk/Options
+        /// @return null on error
+        /// </summary>
         public void ParseCommandLine(OptionSet optionSet, string[] args)
         {
             try
@@ -238,33 +202,48 @@ namespace MtpDownloader
             }
         }
 
-        /**
-         * Recursively print folder content
-         *
-        public void DisplayResourceContents(PortableDeviceObject portableDeviceObject)
+        /// <summary>
+        /// Return list of folders in remote folder. Currently, this is just EnumerateDirectories.
+        /// </summary>
+        public IEnumerable<string> GetRemoteFoldersNames(MediaDevice myDevice)
         {
-            Console.WriteLine(portableDeviceObject.Name);
-            if (portableDeviceObject is PortableDeviceFolder)
-            {
-                DisplayFolderContents((PortableDeviceFolder)portableDeviceObject, 0);
-            }
+            return myDevice.EnumerateDirectories(remoteFolder);
         }
 
-        /**
-         * Recursively print folder content
-         * @param level root folder level (should be 0)
-         *
-        public void DisplayFolderContents(PortableDeviceFolder folder, int level)
+        /// <summary>
+        /// Return list of files in remote folder, using user defined filters
+        /// </summary>
+        public List<string> GetRemoteFilesNames(MediaDevice myDevice)
         {
-            foreach (var item in folder.Files)
+            var list = new List<string>();
+            var directoryInfo = myDevice.GetDirectoryInfo(remoteFolder);
+            var files = directoryInfo.EnumerateFiles(fileNamePattern);
+            if (maxDays < 0)
             {
-                Console.WriteLine("" + level + " " + item.Name);
-
-                if (item is PortableDeviceFolder)
+                foreach (var f in files)
                 {
-                    DisplayFolderContents((PortableDeviceFolder)item, level+1);
+                    list.Add(f.Name);
                 }
             }
-        }*/
+            else
+            {
+                var maxTime = DateTime.Today.AddDays(-maxDays);
+                foreach (var f in files)
+                {
+                    if (f.CreationTime >= maxTime)
+                        list.Add(f.Name);
+                }
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Create and save default INI file
+        /// </summary>
+        public void CreateDefaultIniFile()
+        {
+            inifile.WriteValue("localFolder", "main", Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
+            inifile.Save();
+        }
     }
 }

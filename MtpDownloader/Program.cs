@@ -14,7 +14,7 @@ using NDesk.Options;
  */
 namespace MtpDownloader
 {
-    public enum Action { PrintHelp, PrintVersion, ListDevices, ListFiles, DownloadFiles }
+    public enum Action { PrintHelp, PrintVersion, ListDevices, ListFiles, DownloadFiles, DeleteFiles }
 
     class Program
     {
@@ -23,12 +23,11 @@ namespace MtpDownloader
 
         //command line options
         OptionSet optionSet;
-        public Action action = Action.DownloadFiles;
+        public HashSet<Action> actions = new HashSet<Action>();
         public string deviceId = null;
         public string fileNamePattern = "*"; //FIXME *.* ?
         public long maxDays = -1;
-        public bool deleteFiles = false;
-        public string remoteFolder = "\\\\";
+        public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
 
@@ -52,6 +51,8 @@ namespace MtpDownloader
             ParseCommandLine(optionSet, args);
             var inifilename = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), PROGRAM_NAME + ".ini");
             inifile = new Ini(inifilename);
+            if (!File.Exists(inifilename))
+                CreateDefaultIniFile();
         }
 
         /// <summary>
@@ -59,13 +60,14 @@ namespace MtpDownloader
         /// </summary>
         public void Run()
         {
-            if (action == Action.PrintHelp || errorsInCommandLine)
+            if (actions.Contains(Action.PrintHelp) || errorsInCommandLine)
             {
                 PrintUsage(optionSet);
                 //TODO give some exit code if errorsInCommandLine
                 return;
             }
-            else if (action == Action.PrintVersion)
+
+            if (actions.Contains(Action.PrintVersion))
             {
                 PrintVersion();
                 return;
@@ -81,66 +83,64 @@ namespace MtpDownloader
             }
             else
             {
-                if (action == Action.ListDevices)
+                if (actions.Contains(Action.ListDevices))
                 {
                     foreach (var device in devices)
                     {
-                        Console.WriteLine(device.DeviceId);
+                        Console.WriteLine(device.Description); //.DeviceId is ugly
                     }
                     return;
                 }
                 Console.WriteLine(devices.Count() + " devices connected.");
             }
 
-            using (var MyDevice = (deviceId != null) ? devices.First(d => d.DeviceId == deviceId) : devices.First())
+            using (var myDevice = (deviceId != null) ? devices.First(d => d.DeviceId == deviceId) : devices.First())
             {
-                MyDevice.Connect();
+                myDevice.Connect();
 
-                if (action == Action.ListFiles)
+                var filenames = GetAllRemoteFilesNames(myDevice, remoteFolders);
+
+                if (actions.Contains(Action.ListFiles))
                 {
                     Console.WriteLine("Reading directory...");
 
-                    foreach (var d in GetRemoteFoldersNames(MyDevice))
+                    foreach (var d in GetAllRemoteFoldersNames(myDevice, remoteFolders))
                     {
                         Console.WriteLine(d);
                     }
 
-                    foreach (var f in GetRemoteFilesNames(MyDevice))
+                    foreach (var f in filenames)
                     {
                         Console.WriteLine(f);
                     }
-
-                }
-                else if (action == Action.DownloadFiles)
-                {
-                    Console.WriteLine("'cp' feature not implemented yet...");
                 }
 
-                if (deleteFiles)
+                if (actions.Contains(Action.DownloadFiles))
                 {
-                    Console.WriteLine("'delete' feature not implemented yet...");
+                    Console.WriteLine("'cp' feature not implemented yet..."); //FIXME
+
+                    foreach (var filename in filenames)
+                    {
+                        FileStream fs = File.Create(Path.Combine(localFolder, filename.Substring(filename.LastIndexOf("\\") + 1)));
+                        myDevice.DownloadFile(filename, fs);
+                    }
                 }
+
+                if (actions.Contains(Action.DeleteFiles))
+                {
+                    Console.WriteLine("'delete' feature not implemented yet..."); //FIXME
+
+                    foreach (var filename in filenames)
+                    {
+                        myDevice.DeleteFile(filename);
+                    }
+                }
+
                 Console.WriteLine("Done.");
 
-                MyDevice.Disconnect();
+                myDevice.Disconnect();
             }
 
-        }
-
-        /// <summary>
-        /// Print program usage
-        /// </summary>
-        void PrintUsage(OptionSet p)
-        {
-            Console.WriteLine("Usage: ");
-            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICEID] [-p PATTERN] [-days DAYS] [-delete] [-l remotepath|-cp remotepath localpath]");
-            Console.WriteLine("   " + PROGRAM_NAME + " -ld");
-            Console.WriteLine("   " + PROGRAM_NAME + " -v");
-            Console.WriteLine("   " + PROGRAM_NAME + " -h");
-            Console.WriteLine("Download files from MTP source.");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            p.WriteOptionDescriptions(Console.Out);
         }
 
         /// <summary>
@@ -152,6 +152,22 @@ namespace MtpDownloader
         }
 
         /// <summary>
+        /// Print program usage
+        /// </summary>
+        void PrintUsage(OptionSet p)
+        {
+            Console.WriteLine("Usage: ");
+            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICEID] [-p PATTERN] [-days DAYS] [-delete] [-l] remotepath1 [remotepath2 ...] [-cp localpath]");
+            Console.WriteLine("   " + PROGRAM_NAME + " -ld");
+            Console.WriteLine("   " + PROGRAM_NAME + " -v");
+            Console.WriteLine("   " + PROGRAM_NAME + " -h");
+            Console.WriteLine("Download files from MTP source.");
+            Console.WriteLine();
+            Console.WriteLine("Options:");
+            p.WriteOptionDescriptions(Console.Out);
+        }
+
+        /// <summary>
         /// Create command line NDesk/Options
         /// </summary>
         public OptionSet CreateOptionSet()
@@ -160,12 +176,12 @@ namespace MtpDownloader
                 { "d|device=", "Select device with guid {DEVICEID}", v => deviceId = v },
                 { "p|pattern=", "Select only files matching given {PATTERN}", v => fileNamePattern = v },
                 { "days=", "Select only files at most {DAYS} days old", (long v) => maxDays = v },
-                { "delete", "Delete selected files", v => deleteFiles = v != null },
-                { "cp|copy", "list device content and exit", v => action = Action.DownloadFiles },
-                { "l|list|dir", "list device content and exit", v => action = Action.ListFiles },
-                { "ld|list-devices", "list devices and exit", v => action = Action.ListDevices },
-                { "v|version", "print version and exit", v => action = Action.PrintVersion },
-                { "h|help",  "show this message and exit", v => action = Action.PrintHelp },
+                { "delete", "Delete selected files", v => actions.Add(Action.DeleteFiles) },
+                { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
+                { "ld|list-devices", "List devices", v => actions.Add(Action.ListDevices) },
+                { "cp|copy=", "Copy device files to PC folder", v => { actions.Add(Action.DownloadFiles); localFolder = v; } },
+                { "v|version", "Print program version", v => actions.Add(Action.PrintVersion) },
+                { "h|help",  "Print this message", v => actions.Add(Action.PrintHelp) },
                 };
 
             return p;
@@ -181,18 +197,25 @@ namespace MtpDownloader
             {
                 List<string> extraArgs = optionSet.Parse(args);
 
-                if (action == Action.DownloadFiles && extraArgs.Count == 2)
+                if (actions.Contains(Action.DownloadFiles) && extraArgs.Count >= 2)
                 {
-                    remoteFolder = extraArgs[0];
-                    localFolder = extraArgs[1];
+                    localFolder = extraArgs[extraArgs.Count - 1];
+                    remoteFolders.AddRange(extraArgs);
+                    remoteFolders.Remove(localFolder);
                 }
-                else if (action == Action.ListFiles && extraArgs.Count == 1)
+                else if (actions.Contains(Action.ListFiles) && extraArgs.Count == 1)
                 {
-                    remoteFolder = extraArgs[0];
+                    remoteFolders.Add(extraArgs[0]);
                 }
                 else if (extraArgs.Count > 0)
                 {
                     Console.WriteLine("Unrecognized options:" + extraArgs.ToList());
+                    errorsInCommandLine = true;
+                }
+
+                if (actions.Count == 0)
+                {
+                    actions.Add(Action.PrintHelp);
                     errorsInCommandLine = true;
                 }
             }
@@ -205,7 +228,7 @@ namespace MtpDownloader
         /// <summary>
         /// Return list of folders in remote folder. Currently, this is just EnumerateDirectories.
         /// </summary>
-        public IEnumerable<string> GetRemoteFoldersNames(MediaDevice myDevice)
+        public IEnumerable<string> GetRemoteFoldersNames(MediaDevice myDevice, string remoteFolder)
         {
             return myDevice.EnumerateDirectories(remoteFolder);
         }
@@ -213,7 +236,7 @@ namespace MtpDownloader
         /// <summary>
         /// Return list of files in remote folder, using user defined filters
         /// </summary>
-        public List<string> GetRemoteFilesNames(MediaDevice myDevice)
+        public List<string> GetRemoteFilesNames(MediaDevice myDevice, string remoteFolder)
         {
             var list = new List<string>();
             var directoryInfo = myDevice.GetDirectoryInfo(remoteFolder);
@@ -233,6 +256,32 @@ namespace MtpDownloader
                     if (f.CreationTime >= maxTime)
                         list.Add(f.Name);
                 }
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Return list of files in remote folder, using user defined filters
+        /// </summary>
+        public List<string> GetAllRemoteFilesNames(MediaDevice myDevice, List<string> remoteFolders)
+        {
+            var list = new List<string>();
+            foreach (var remoteFolder in remoteFolders)
+            {
+                list.AddRange(GetRemoteFilesNames(myDevice, remoteFolder));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Return list of folders in remote folder
+        /// </summary>
+        public List<string> GetAllRemoteFoldersNames(MediaDevice myDevice, List<string> remoteFolders)
+        {
+            var list = new List<string>();
+            foreach (var remoteFolder in remoteFolders)
+            {
+                list.AddRange(GetRemoteFoldersNames(myDevice, remoteFolder));
             }
             return list;
         }

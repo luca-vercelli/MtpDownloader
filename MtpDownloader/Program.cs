@@ -85,11 +85,12 @@ namespace MtpDownloader
 
             if (devices.Count() == 0)
             {
-                Console.WriteLine("No devices connected.");
+                Console.Error.WriteLine("No devices connected.");
                 return;
             }
             else
             {
+                Console.Error.WriteLine(devices.Count() + " devices connected.");
                 if (actions.Contains(Action.ListDevices))
                 {
                     foreach (var device in devices)
@@ -98,33 +99,34 @@ namespace MtpDownloader
                     }
                     return;
                 }
-                Console.WriteLine(devices.Count() + " devices connected.");
             }
 
             using (var myDevice = (deviceDescription != null) ? devices.First(d => d.Description == deviceDescription) : devices.First())
             {
                 myDevice.Connect();
 
-                var filenames = GetAllRemoteFilesNames(myDevice, remoteFolders);
+                var filenames = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive);
 
                 if (actions.Contains(Action.ListFiles))
                 {
-                    Console.WriteLine("Reading directory...");
-
-                    foreach (var d in GetAllRemoteFoldersNames(myDevice, remoteFolders))
-                    {
-                        Console.WriteLine(d);
-                    }
-
+                    Console.Error.WriteLine("Reading directory...");
+                    
                     foreach (var f in filenames)
                     {
                         Console.WriteLine(f);
+                    }
+                    if (!recursive)
+                    {
+                        foreach (var f in GetAllRemoteFoldersNames(myDevice, remoteFolders, recursive))
+                        {
+                            Console.WriteLine(f);
+                        }
                     }
                 }
 
                 if (actions.Contains(Action.DownloadFiles))
                 {
-                    Console.WriteLine("'cp' feature not implemented yet..."); //FIXME
+                    Console.Error.WriteLine("'cp' feature not implemented yet..."); //FIXME
 
                     foreach (var filename in filenames)
                     {
@@ -135,15 +137,16 @@ namespace MtpDownloader
 
                 if (actions.Contains(Action.DeleteFiles))
                 {
-                    Console.WriteLine("'delete' feature not implemented yet..."); //FIXME
+                    Console.Error.WriteLine("'delete' feature not implemented yet..."); //FIXME
 
                     foreach (var filename in filenames)
                     {
-                        myDevice.DeleteFile(filename);
+                        Console.Error.WriteLine("going to delete " + filename + "..."); //FIXME
+                        // myDevice.DeleteFile(filename);
                     }
                 }
 
-                Console.WriteLine("Done.");
+                Console.Error.WriteLine("Done.");
 
                 myDevice.Disconnect();
             }
@@ -205,19 +208,24 @@ namespace MtpDownloader
             try
             {
                 List<string> extraArgs = optionSet.Parse(args);
+                Console.Error.WriteLine("DEBUG extraArgs=" + string.Join(", ", extraArgs));
 
-                if ((actions.Contains(Action.DownloadFiles) || actions.Contains(Action.ListFiles) || actions.Contains(Action.DeleteFiles)) && extraArgs.Count >= 1)
+                if (actions.Contains(Action.DownloadFiles) || actions.Contains(Action.ListFiles) || actions.Contains(Action.DeleteFiles))
                 {
-                    remoteFolders.AddRange(extraArgs);
+                    // at least 1 remote path required
+                    if (extraArgs.Count >= 1)
+                    {
+                        remoteFolders.AddRange(extraArgs);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Missing argument.");
+                        errorsInCommandLine = true;
+                    }
                 }
                 else if (extraArgs.Count > 0)
                 {
-                    Console.WriteLine("Unrecognized options:" + string.Join(", ", extraArgs));
-                    errorsInCommandLine = true;
-                }
-                else
-                {
-                    Console.WriteLine("Missing argument.");
+                    Console.Error.WriteLine("Unrecognized options:" + string.Join(", ", extraArgs));
                     errorsInCommandLine = true;
                 }
 
@@ -236,9 +244,16 @@ namespace MtpDownloader
         /// <summary>
         /// Return list of folders in remote folder. Currently, this is just EnumerateDirectories.
         /// </summary>
-        public IEnumerable<string> GetRemoteFoldersNames(MediaDevice myDevice, string remoteFolder)
+        public IEnumerable<string> GetRemoteFoldersNames(MediaDevice myDevice, string remoteFolder, bool recursive)
         {
-            return myDevice.EnumerateDirectories(remoteFolder);
+            if (!recursive)
+            {
+                return myDevice.EnumerateDirectories(remoteFolder);
+            }
+            else
+            {
+                return myDevice.EnumerateDirectories(remoteFolder, "*", SearchOption.AllDirectories);
+            }
         }
 
         /// <summary>
@@ -247,7 +262,7 @@ namespace MtpDownloader
         /// Return IEnumerable, not List! because MTP protocol is really slowly, objects are taken
         /// one per time
         /// </summary>
-        public IEnumerable<string> GetRemoteFilesNames(MediaDevice myDevice, string remoteFolder)
+        public IEnumerable<string> GetRemoteFilesNames(MediaDevice myDevice, string remoteFolder, bool recursive)
         {
             var directoryInfo = myDevice.GetDirectoryInfo(remoteFolder);
             var files = directoryInfo.EnumerateFiles(fileNamePattern);
@@ -266,6 +281,17 @@ namespace MtpDownloader
                     yield return f.Name;
                 }
             }
+            if (recursive)
+            {
+                var subfolders = GetRemoteFoldersNames(myDevice, remoteFolder, false);
+                foreach (var subfolder in subfolders)
+                {
+                    foreach (var filename in GetRemoteFilesNames(myDevice, subfolder, recursive))
+                    {
+                        yield return filename;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -274,11 +300,11 @@ namespace MtpDownloader
         /// Return IEnumerable, not List! because MTP protocol is really slowly, objects are taken
         /// one per time
         /// </summary>
-        public IEnumerable<string> GetAllRemoteFilesNames(MediaDevice myDevice, List<string> remoteFolders)
+        public IEnumerable<string> GetAllRemoteFilesNames(MediaDevice myDevice, List<string> remoteFolders, bool recursive)
         {
             foreach (var remoteFolder in remoteFolders)
             {
-                foreach (var remoteFile in GetRemoteFilesNames(myDevice, remoteFolder))
+                foreach (var remoteFile in GetRemoteFilesNames(myDevice, remoteFolder, recursive))
                 {
                     yield return remoteFile;
                 }
@@ -292,11 +318,11 @@ namespace MtpDownloader
         /// Return IEnumerable, not List! because MTP protocol is really slowly, objects are taken
         /// one per time
         /// </summary>
-        public IEnumerable<string> GetAllRemoteFoldersNames(MediaDevice myDevice, List<string> remoteFolders)
+        public IEnumerable<string> GetAllRemoteFoldersNames(MediaDevice myDevice, List<string> remoteFolders, bool recursive)
         {
             foreach (var remoteFolder in remoteFolders)
             {
-                foreach (var remoteSubfolder in GetRemoteFoldersNames(myDevice, remoteFolder))
+                foreach (var remoteSubfolder in GetRemoteFoldersNames(myDevice, remoteFolder, recursive))
                     yield return remoteSubfolder;
             }
         }

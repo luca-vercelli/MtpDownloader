@@ -32,6 +32,7 @@ namespace MtpDownloader
         public HashSet<Action> actions = new HashSet<Action>();
         public string deviceDescription = null;
         public string fileNamePattern = "*"; //FIXME *.* ?
+        public Boolean recursive = false;
         public Boolean useMinDate = false;
         public DateTime minDate;
         public List<string> remoteFolders = new List<string>();
@@ -163,7 +164,7 @@ namespace MtpDownloader
         void PrintUsage(OptionSet p)
         {
             Console.WriteLine("Usage: ");
-            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-l] remotepath1 [remotepath2 ...] [-cp localpath]");
+            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath]");
             Console.WriteLine("   " + PROGRAM_NAME + " -ld");
             Console.WriteLine("   " + PROGRAM_NAME + " -v");
             Console.WriteLine("   " + PROGRAM_NAME + " -h");
@@ -183,6 +184,7 @@ namespace MtpDownloader
                 { "p|pattern=", "Select only files matching given {PATTERN}", v => fileNamePattern = v },
                 { "days=", "Select only files at most {DAYS} days old", (long v) => { minDate = DateTime.Today.AddDays(-v); useMinDate = true; } },
                 { "s|since=", "Select only files not older than {DATE}", v => { minDate = DateTime.Parse(v); useMinDate = true;        }    },
+                { "r|recursive", "Recursive search", v => recursive = true  },
                 { "delete", "Delete selected files", v => actions.Add(Action.DeleteFiles) },
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
                 { "ld|list-devices", "List devices (i.e. their Description)", v => actions.Add(Action.ListDevices) },
@@ -242,10 +244,12 @@ namespace MtpDownloader
 
         /// <summary>
         /// Return list of files in remote folder, using user defined filters
+        /// 
+        /// Return IEnumerable, not List! because MTP protocol is really slowly, objects are taken
+        /// one per time
         /// </summary>
-        public List<string> GetRemoteFilesNames(MediaDevice myDevice, string remoteFolder)
+        public IEnumerable<string> GetRemoteFilesNames(MediaDevice myDevice, string remoteFolder)
         {
-            var list = new List<string>();
             var directoryInfo = myDevice.GetDirectoryInfo(remoteFolder);
             var files = directoryInfo.EnumerateFiles(fileNamePattern);
             if (useMinDate)
@@ -253,43 +257,49 @@ namespace MtpDownloader
                 foreach (var f in files)
                 {
                     if (f.CreationTime >= minDate)
-                        list.Add(f.Name);
+                        yield return f.Name;
                 }
             }
             else
             {
                 foreach (var f in files)
                 {
-                    list.Add(f.Name);
+                    yield return f.Name;
                 }
             }
-            return list;
         }
 
         /// <summary>
         /// Return list of files in remote folder, using user defined filters
+        /// 
+        /// Return IEnumerable, not List! because MTP protocol is really slowly, objects are taken
+        /// one per time
         /// </summary>
-        public List<string> GetAllRemoteFilesNames(MediaDevice myDevice, List<string> remoteFolders)
+        public IEnumerable<string> GetAllRemoteFilesNames(MediaDevice myDevice, List<string> remoteFolders)
         {
-            var list = new List<string>();
             foreach (var remoteFolder in remoteFolders)
             {
-                list.AddRange(GetRemoteFilesNames(myDevice, remoteFolder));
+                foreach (var remoteFile in GetRemoteFilesNames(myDevice, remoteFolder))
+                {
+                    yield return remoteFile;
+                }
             }
-            return list;
         }
+
 
         /// <summary>
         /// Return list of folders in remote folder
+        /// 
+        /// Return IEnumerable, not List! because MTP protocol is really slowly, objects are taken
+        /// one per time
         /// </summary>
-        public List<string> GetAllRemoteFoldersNames(MediaDevice myDevice, List<string> remoteFolders)
+        public IEnumerable<string> GetAllRemoteFoldersNames(MediaDevice myDevice, List<string> remoteFolders)
         {
-            var list = new List<string>();
             foreach (var remoteFolder in remoteFolders)
             {
-                list.AddRange(GetRemoteFoldersNames(myDevice, remoteFolder));
+                foreach (var remoteSubfolder in GetRemoteFoldersNames(myDevice, remoteFolder))
+                    yield return remoteSubfolder;
             }
-            return list;
         }
 
         /// <summary>

@@ -212,7 +212,12 @@ namespace MtpDownloader
                 }
                 else if (extraArgs.Count > 0)
                 {
-                    Console.WriteLine("Unrecognized options:" + extraArgs.ToList());
+                    Console.WriteLine("Unrecognized options:" + string.Join(", ", extraArgs));
+                    errorsInCommandLine = true;
+                }
+                else
+                {
+                    Console.WriteLine("Missing argument.");
                     errorsInCommandLine = true;
                 }
 

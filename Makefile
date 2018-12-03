@@ -16,6 +16,3 @@ clean:
 	rm -rf packages
 	rm -rf bin
 
-run:
-	cd bin && mono MtpDownloader.exe $@
-

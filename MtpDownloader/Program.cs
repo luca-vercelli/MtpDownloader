@@ -206,15 +206,9 @@ namespace MtpDownloader
             {
                 List<string> extraArgs = optionSet.Parse(args);
 
-                if (actions.Contains(Action.DownloadFiles) && extraArgs.Count >= 2)
+                if ((actions.Contains(Action.DownloadFiles) || actions.Contains(Action.ListFiles) || actions.Contains(Action.DeleteFiles)) && extraArgs.Count >= 1)
                 {
-                    localFolder = extraArgs[extraArgs.Count - 1];
                     remoteFolders.AddRange(extraArgs);
-                    remoteFolders.Remove(localFolder);
-                }
-                else if (actions.Contains(Action.ListFiles) && extraArgs.Count == 1)
-                {
-                    remoteFolders.Add(extraArgs[0]);
                 }
                 else if (extraArgs.Count > 0)
                 {

@@ -37,10 +37,11 @@ namespace MtpDownloader
         public HashSet<Action> actions = new HashSet<Action>();
         public string deviceDescription = null;
         public string fileNamePattern = "*"; //FIXME *.* ?
-        public Boolean recursive = false;
-        public Boolean useMinDate = false;
+        public bool recursive = false;
+        public bool useMinDate = false;
         public DateTime minDate;
-        public Boolean removeDuplicates = false;
+        public bool removeDuplicates = false;
+        public bool splitFolders = false;
         public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
@@ -63,9 +64,6 @@ namespace MtpDownloader
         {
             optionSet = CreateOptionSet();
             ParseCommandLine(optionSet, args);
-            inifile = new Ini(INI_FILE_NAME);
-            if (!File.Exists(INI_FILE_NAME))
-                CreateDefaultIniFile();
         }
 
         /// <summary>
@@ -132,11 +130,12 @@ namespace MtpDownloader
 
                 if (actions.Contains(Action.DownloadFiles))
                 {
-                    Console.Error.WriteLine("'cp' feature not implemented yet..."); //FIXME
+                    Console.Error.WriteLine("'cp' feature is in beta..."); //FIXME
+                    if (removeDuplicates) Console.Error.WriteLine("'rd' feature is in beta..."); //FIXME
 
                     var database = new Dictionary<string, FileSpec>();
 
-                    foreach (var filename in filenames)
+                    foreach (var filename in filenames) //FIXME is this correct? can iterator be used more than once?
                     {
                         var localFilename = Path.Combine(localFolder, filename.Substring(filename.LastIndexOf("\\") + 1));
                         Console.Error.WriteLine("writing: " + localFilename);
@@ -156,6 +155,14 @@ namespace MtpDownloader
                                 database[fspec.ContentHash] = fspec;
                             }
                         }
+                    }
+
+                    if (splitFolders)
+                    {
+                        Console.Error.WriteLine("'split' feature not implemented..."); //FIXME
+
+                        MoveLogoFiles(database, filenames); //FIXME is this correct? can iterator be used more than once?
+                        MoveVideoFiles(database, filenames);
                     }
                 }
 
@@ -192,7 +199,7 @@ namespace MtpDownloader
         void PrintUsage(OptionSet p)
         {
             Console.WriteLine("Usage: ");
-            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd]]");
+            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd] [-sp]]");
             Console.WriteLine("   " + PROGRAM_NAME + " -ld");
             Console.WriteLine("   " + PROGRAM_NAME + " -v");
             Console.WriteLine("   " + PROGRAM_NAME + " -h");
@@ -213,6 +220,7 @@ namespace MtpDownloader
                 { "days=", "Select only files at most {DAYS} days old", (long v) => { minDate = DateTime.Today.AddDays(-v); useMinDate = true; } },
                 { "s|since=", "Select only files not older than {DATE}", v => { minDate = DateTime.Parse(v); useMinDate = true;        }    },
                 { "r|recursive", "Recursive search", v => recursive = true  },
+                { "sp|split", "Split destination folders", v => splitFolders = true  },
                 { "rd|remove-duplicates", "Remove duplicates while downloading", v => removeDuplicates = true  },
                 { "delete", "Delete selected files", v => actions.Add(Action.DeleteFiles) },
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
@@ -355,18 +363,42 @@ namespace MtpDownloader
         }
 
         /// <summary>
-        /// Create and save default INI file
+        /// Move under \logo images that are recognized as drawings
         /// </summary>
-        public void CreateDefaultIniFile()
+        void MoveLogoFiles(Dictionary<string, FileSpec> database, IEnumerable<string> filenames)
         {
-            inifile.WriteValue("localFolder", "main", Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
-            inifile.Save();
+            Directory.CreateDirectory(Path.Combine(localFolder,"logo"));
+            foreach (var fileSpec in database.Values)
+            {
+                if (fileSpec.IsLogo())
+                {
+                    fileSpec.MoveUnder("logo");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Move under \video files that are recognized as videos
+        /// </summary>
+        void MoveVideoFiles(Dictionary<string, FileSpec> database, IEnumerable<string> filenames)
+        {
+            Directory.CreateDirectory(Path.Combine(localFolder, "video"));
+            foreach (var fileSpec in database.Values)
+            {
+                if (fileSpec.IsVideo())
+                {
+                    fileSpec.MoveUnder("video");
+                }
+            }
         }
     }
 
+    /// <summary>
+    /// This class is used internally to store file attributes
+    /// </summary>
     public class FileSpec
     {
-        public string Filename;
+        public string FullFilename;
         public string ContentHash;
         public int Width;
         public int Height;
@@ -377,13 +409,13 @@ namespace MtpDownloader
         public static string[] imgExtensions = new string[] { "bmp", "jpg", "jpeg", "png", "gif" };
         public static string[] videoExtensions = new string[] { "mp4", "avi" };
 
-        public FileSpec(string filename)
+        public FileSpec(string fullFilename)
         {
-            Filename = filename;
+            FullFilename = fullFilename;
 
             if (IsImage())
             {
-                Image image = Image.FromFile(filename);
+                Image image = Image.FromFile(fullFilename);
                 Width = image.Width;
                 Height = image.Height;
                 CalculateColorDepth(image);
@@ -394,8 +426,37 @@ namespace MtpDownloader
 
         public string Extension()
         {
-            int idx = Filename.LastIndexOf(".");
-            return (idx < 0) ? "" : Filename.Substring(idx + 1).ToLower();
+            return Path.GetExtension(FullFilename);
+        }
+
+        public string Filename()
+        {
+            return Path.GetFileName(FullFilename);
+        }
+
+        public string Folder()
+        {
+            return Path.GetDirectoryName(FullFilename);
+        }
+
+        /// <summary>
+        /// Move file to another folder. The folder must exist.
+        /// </summary>
+        public void MoveTo(string newfolder)
+        {
+            var newFullname = Path.Combine(newfolder, Filename());
+            File.Move(FullFilename, newFullname);
+            FullFilename = newFullname;
+        }
+
+        /// <summary>
+        /// Move file to a subfolder. The subfolder must exist.
+        /// </summary>
+        public void MoveUnder(string subfolder)
+        {
+            var newFullname = Path.Combine(Folder(), subfolder, Filename());
+            File.Move(FullFilename, newFullname);
+            FullFilename = newFullname;
         }
 
         public bool IsVideo()
@@ -408,9 +469,11 @@ namespace MtpDownloader
             return imgExtensions.Contains(Extension());
         }
 
+        /// <summary>
+        /// Thell if this image is a drawing/logo instead of a photo. Algorithm is naive, should consider the real number of colors?
+        /// </summary>
         public bool IsLogo()
         {
-            //this is naive, should consider the real number of colors?
             return IsImage() && ColorDepth <= 8;
         }
 
@@ -460,7 +523,7 @@ namespace MtpDownloader
 
             using (var md5 = MD5.Create())
             {
-                using (var stream = File.OpenRead(Filename))
+                using (var stream = File.OpenRead(FullFilename))
                 {
                     var hash = md5.ComputeHash(stream);
                     ContentHash = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
@@ -482,5 +545,6 @@ namespace MtpDownloader
 
             UsedColors = cnt.Count;
         }
+
     }
 }

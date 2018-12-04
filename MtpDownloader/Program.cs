@@ -1,7 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Xml.Serialization;
 using MediaDevices;
 using NDesk.Options;
 
@@ -26,6 +30,7 @@ namespace MtpDownloader
         public const string VERSION = "0.1";
 
         public static string INI_FILE_NAME = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), PROGRAM_NAME + ".ini");
+        public static string XML_FILE_NAME = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), PROGRAM_NAME + ".xml");
 
         //command line options
         OptionSet optionSet;
@@ -35,6 +40,7 @@ namespace MtpDownloader
         public Boolean recursive = false;
         public Boolean useMinDate = false;
         public DateTime minDate;
+        public Boolean removeDuplicates = false;
         public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
@@ -167,7 +173,7 @@ namespace MtpDownloader
         void PrintUsage(OptionSet p)
         {
             Console.WriteLine("Usage: ");
-            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath]");
+            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd]]");
             Console.WriteLine("   " + PROGRAM_NAME + " -ld");
             Console.WriteLine("   " + PROGRAM_NAME + " -v");
             Console.WriteLine("   " + PROGRAM_NAME + " -h");
@@ -188,6 +194,7 @@ namespace MtpDownloader
                 { "days=", "Select only files at most {DAYS} days old", (long v) => { minDate = DateTime.Today.AddDays(-v); useMinDate = true; } },
                 { "s|since=", "Select only files not older than {DATE}", v => { minDate = DateTime.Parse(v); useMinDate = true;        }    },
                 { "r|recursive", "Recursive search", v => recursive = true  },
+                { "rd|remove-duplicates", "Remove duplicates while downloading", v => removeDuplicates = true  },
                 { "delete", "Delete selected files", v => actions.Add(Action.DeleteFiles) },
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
                 { "ld|list-devices", "List devices (i.e. their Description)", v => actions.Add(Action.ListDevices) },
@@ -334,6 +341,126 @@ namespace MtpDownloader
         {
             inifile.WriteValue("localFolder", "main", Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
             inifile.Save();
+        }
+    }
+
+    public class FileSpec
+    {
+        public string Filename;
+        public string ContentHash;
+        public int Width;
+        public int Height;
+        public int ColorDepth;
+        public int UsedColors;
+
+        //TODO what are used files extensions on smartphones?
+        public static string[] imgExtensions = new string[] { "bmp", "jpg", "jpeg", "png", "gif" };
+        public static string[] videoExtensions = new string[] { "mp4", "avi" };
+
+        public FileSpec(string filename)
+        {
+            Filename = filename;
+
+            if (IsImage())
+            {
+                Image image = Image.FromFile(filename);
+                Width = image.Width;
+                Height = image.Height;
+                CalculateColorDepth(image);
+            }
+
+            CalculateContentHash();
+        }
+
+        public string Extension()
+        {
+            int idx = Filename.LastIndexOf(".");
+            return (idx < 0) ? "" : Filename.Substring(idx + 1).ToLower();
+        }
+
+        public bool IsVideo()
+        {
+            return videoExtensions.Contains(Extension());
+        }
+
+        public bool IsImage()
+        {
+            return imgExtensions.Contains(Extension());
+        }
+
+        public bool IsLogo()
+        {
+            //this is naive, should consider the real number of colors?
+            return IsImage() && ColorDepth <= 8;
+        }
+
+        private void CalculateColorDepth(Image image)
+        {
+            switch (image.PixelFormat)
+            {
+                case PixelFormat.Format64bppArgb:
+                case PixelFormat.Format64bppPArgb:
+                    ColorDepth = 64;
+                    break;
+                case PixelFormat.Format48bppRgb:
+                    ColorDepth = 48;
+                    break;
+                case PixelFormat.Canonical:
+                case PixelFormat.Format32bppArgb:
+                case PixelFormat.Format32bppPArgb:
+                case PixelFormat.Format32bppRgb:
+                    ColorDepth = 32;
+                    break;
+                case PixelFormat.Format24bppRgb:
+                    ColorDepth = 24;
+                    break;
+                case PixelFormat.Format16bppArgb1555:
+                case PixelFormat.Format16bppGrayScale:
+                case PixelFormat.Format16bppRgb555:
+                case PixelFormat.Format16bppRgb565:
+                    ColorDepth = 16;
+                    break;
+                case PixelFormat.Format8bppIndexed:
+                    ColorDepth = 8;
+                    break;
+                case PixelFormat.Format4bppIndexed:
+                    ColorDepth = 4;
+                    break;
+                case PixelFormat.Format1bppIndexed:
+                    ColorDepth = 1;
+                    break;
+                default:
+                    ColorDepth = -1;  //UNKNOWN
+                    break;
+            }
+        }
+
+        private void CalculateContentHash()
+        {
+
+            using (var md5 = MD5.Create())
+            {
+                using (var stream = File.OpenRead(Filename))
+                {
+                    var hash = md5.ComputeHash(stream);
+                    ContentHash = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+            }
+        }
+
+        //TODO not used yet
+        private void CalculateUsedColors(Bitmap image)
+        {
+            var cnt = new HashSet<System.Drawing.Color>();
+
+            for (int x = 0; x < image.Width; x++)
+                for (int y = 0; y < image.Height; y++)
+                {
+                    var pixel = image.GetPixel(x, y);
+                    cnt.Add(pixel);
+                }
+
+            UsedColors = cnt.Count;
         }
     }
 }

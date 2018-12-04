@@ -116,7 +116,7 @@ namespace MtpDownloader
                 if (actions.Contains(Action.ListFiles))
                 {
                     Console.Error.WriteLine("Reading directory...");
-                    
+
                     foreach (var f in filenames)
                     {
                         Console.WriteLine(f);
@@ -134,15 +134,34 @@ namespace MtpDownloader
                 {
                     Console.Error.WriteLine("'cp' feature not implemented yet..."); //FIXME
 
+                    var database = new Dictionary<string, FileSpec>();
+
                     foreach (var filename in filenames)
                     {
-                        FileStream fs = File.Create(Path.Combine(localFolder, filename.Substring(filename.LastIndexOf("\\") + 1)));
+                        var localFilename = Path.Combine(localFolder, filename.Substring(filename.LastIndexOf("\\") + 1));
+                        Console.Error.WriteLine("writing: " + localFilename);
+                        FileStream fs = File.Create(localFilename);
                         myDevice.DownloadFile(filename, fs);
+
+                        if (removeDuplicates)
+                        {
+                            FileSpec fspec = new FileSpec(localFilename);
+                            if (database.ContainsKey(fspec.ContentHash))
+                            {
+                                Console.Error.WriteLine("ignoring duplicate file: " + localFilename);
+                                File.Delete(localFilename);
+                            }
+                            else
+                            {
+                                database[fspec.ContentHash] = fspec;
+                            }
+                        }
                     }
                 }
 
                 if (actions.Contains(Action.DeleteFiles))
                 {
+                    //FIXME file should be deleted just after downloaded, if download is enabled
                     Console.Error.WriteLine("'delete' feature not implemented yet..."); //FIXME
 
                     foreach (var filename in filenames)
@@ -241,6 +260,7 @@ namespace MtpDownloader
                     actions.Add(Action.PrintHelp);
                     errorsInCommandLine = true;
                 }
+
             }
             catch (OptionException)
             {

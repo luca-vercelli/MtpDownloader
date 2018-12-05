@@ -102,8 +102,21 @@ namespace MtpDownloader
                 }
             }
 
-            using (var myDevice = (deviceDescription != null) ? devices.First(d => d.Description == deviceDescription) : devices.First())
+            using (var myDevice = (deviceDescription != null) ? devices.FirstOrDefault(d => d.Description == deviceDescription) : devices.First())
             {
+                if (myDevice == null)
+                {
+                    if (deviceDescription != null)
+                    {
+                        Console.Error.WriteLine("Device unknown: " + deviceDescription);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Some I/O error occurerd while connecting to device"); //can ever happen?
+                    }
+                    return;
+
+                }
                 myDevice.Connect();
 
                 var filenames = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive);

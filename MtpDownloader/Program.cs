@@ -16,7 +16,7 @@ using NDesk.Options;
  * 
  * Each storage, each folder and each file is internally identified by an ID, which is quite useless for the user (e.g."o32D9")
  * 
- * Each device is identified by some terribly long DeviceId; we prefer identofy them by Description.
+ * Each device is identified by some terribly long DeviceId; we prefer identify them by Description.
  * 
  * A configuration file is created and read from AppData\Local
  */
@@ -28,9 +28,9 @@ namespace MtpDownloader
     {
         public const string PROGRAM_NAME = "MtpDownloader";
         public const string VERSION = "0.1";
-
-        public static string INI_FILE_NAME = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), PROGRAM_NAME + ".ini");
-        public static string XML_FILE_NAME = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), PROGRAM_NAME + ".xml");
+        public const string LOGO_SUBFOLDER = "logo";
+        public const string VIDEO_SUBFOLDER = "video";
+        public const int MAX_FILES = 200;
 
         //command line options
         OptionSet optionSet;
@@ -45,8 +45,6 @@ namespace MtpDownloader
         public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
-
-        Ini inifile;
 
         /// <summary>
         /// Entry point
@@ -142,9 +140,15 @@ namespace MtpDownloader
                         FileStream fs = File.Create(localFilename);
                         myDevice.DownloadFile(filename, fs);
 
+                        FileSpec fspec = null;
+
+                        if (removeDuplicates || splitFolders)
+                        {
+                            fspec = new FileSpec(localFilename);
+                        }
+
                         if (removeDuplicates)
                         {
-                            FileSpec fspec = new FileSpec(localFilename);
                             if (database.ContainsKey(fspec.ContentHash))
                             {
                                 Console.Error.WriteLine("ignoring duplicate file: " + localFilename);
@@ -161,8 +165,9 @@ namespace MtpDownloader
                     {
                         Console.Error.WriteLine("'split' feature not implemented..."); //FIXME
 
-                        MoveLogoFiles(database, filenames); //FIXME is this correct? can iterator be used more than once?
-                        MoveVideoFiles(database, filenames);
+                        MoveLogoFiles(database);
+                        MoveVideoFiles(database);
+                        SplitFilesInSmallFolders(database);
                     }
                 }
 
@@ -365,14 +370,14 @@ namespace MtpDownloader
         /// <summary>
         /// Move under \logo images that are recognized as drawings
         /// </summary>
-        void MoveLogoFiles(Dictionary<string, FileSpec> database, IEnumerable<string> filenames)
+        void MoveLogoFiles(Dictionary<string, FileSpec> database)
         {
-            Directory.CreateDirectory(Path.Combine(localFolder,"logo"));
+            Directory.CreateDirectory(Path.Combine(localFolder, LOGO_SUBFOLDER));
             foreach (var fileSpec in database.Values)
             {
                 if (fileSpec.IsLogo())
                 {
-                    fileSpec.MoveUnder("logo");
+                    fileSpec.MoveUnder(LOGO_SUBFOLDER);
                 }
             }
         }
@@ -380,16 +385,24 @@ namespace MtpDownloader
         /// <summary>
         /// Move under \video files that are recognized as videos
         /// </summary>
-        void MoveVideoFiles(Dictionary<string, FileSpec> database, IEnumerable<string> filenames)
+        void MoveVideoFiles(Dictionary<string, FileSpec> database)
         {
-            Directory.CreateDirectory(Path.Combine(localFolder, "video"));
+            Directory.CreateDirectory(Path.Combine(localFolder, VIDEO_SUBFOLDER));
             foreach (var fileSpec in database.Values)
             {
                 if (fileSpec.IsVideo())
                 {
-                    fileSpec.MoveUnder("video");
+                    fileSpec.MoveUnder(VIDEO_SUBFOLDER);
                 }
             }
+        }
+
+        /// <summary>
+        /// Put files into many subdirectories, by date, with at most MAX_FILES files per each
+        /// </summary>
+        void SplitFilesInSmallFolders(Dictionary<string, FileSpec> database)
+        {
+            throw new NotImplementedException();
         }
     }
 
@@ -424,16 +437,25 @@ namespace MtpDownloader
             CalculateContentHash();
         }
 
+        /// <summary>
+        /// Return file extension only
+        /// </summary>
         public string Extension()
         {
             return Path.GetExtension(FullFilename);
         }
 
+        /// <summary>
+        /// Return file name only
+        /// </summary>
         public string Filename()
         {
             return Path.GetFileName(FullFilename);
         }
 
+        /// <summary>
+        /// Return the full path of the folder containing this file (right?)
+        /// </summary>
         public string Folder()
         {
             return Path.GetDirectoryName(FullFilename);
@@ -459,18 +481,24 @@ namespace MtpDownloader
             FullFilename = newFullname;
         }
 
+        /// <summary>
+        /// Guess if this file is a video, looking at its extension.
+        /// </summary>
         public bool IsVideo()
         {
             return videoExtensions.Contains(Extension());
         }
 
+        /// <summary>
+        /// Guess if this file is an image, looking at its extension.
+        /// </summary>
         public bool IsImage()
         {
             return imgExtensions.Contains(Extension());
         }
 
         /// <summary>
-        /// Thell if this image is a drawing/logo instead of a photo. Algorithm is naive, should consider the real number of colors?
+        /// Guess if this image is a drawing/logo instead of a photo. Algorithm is naive, should consider the real number of colors?
         /// </summary>
         public bool IsLogo()
         {

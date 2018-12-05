@@ -119,6 +119,11 @@ namespace MtpDownloader
                 }
                 myDevice.Connect();
 
+                // FIXME
+                // Even if device is connected, it could have not authorized external access yet.
+                // (Windows will show an empty device.)
+                // In this case, "filenames = GetAllRemoteFilesNames" succedes, however  "foreach (var f in filenames)" will raise Exception:
+                // System.Runtime.InteropServices.COMException: Libreria, unità o pool di supporti vuoto. (Eccezione da HRESULT: 0x800710D2)
                 var filenames = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive);
 
                 if (actions.Contains(Action.ListFiles))

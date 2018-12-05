@@ -169,14 +169,14 @@ namespace MtpDownloader
 
                         if (removeDuplicates)
                         {
-                            if (database.ContainsKey(fspec.ContentHash))
+                            if (database.ContainsKey(fspec.ContentHash()))
                             {
                                 Console.Error.WriteLine("ignoring duplicate file: " + localFilename);
                                 File.Delete(localFilename);
                             }
                             else
                             {
-                                database[fspec.ContentHash] = fspec;
+                                database[fspec.ContentHash()] = fspec;
                             }
                         }
                     }
@@ -409,7 +409,7 @@ namespace MtpDownloader
             Directory.CreateDirectory(Path.Combine(localFolder, VIDEO_SUBFOLDER));
             foreach (var fileSpec in database.Values)
             {
-                if (fileSpec.IsVideo)
+                if (fileSpec.IsVideo())
                 {
                     fileSpec.MoveUnder(VIDEO_SUBFOLDER);
                 }
@@ -421,27 +421,27 @@ namespace MtpDownloader
         /// </summary>
         void SplitFilesInSmallFolders(Dictionary<string, FileSpec> database)
         {
-            List<FileSpec> fileDaSpostare = new List<FileSpec>();
+            List<FileSpec> filesToMove = new List<FileSpec>();
             foreach (var fileSpec in database.Values)
             {
-                if (!fileSpec.IsVideo && !fileSpec.IsLogo())
+                if (!fileSpec.IsVideo() && !fileSpec.IsLogo())
                 {
-                    fileDaSpostare.Add(fileSpec);
+                    filesToMove.Add(fileSpec);
                 }
             }
 
-            if (fileDaSpostare.Count > 0)
+            if (filesToMove.Count > 0)
             {
-                fileDaSpostare.Sort((x, y) => x.CreationTime == null ? (y.CreationTime == null ? 0 : +1) : (y.CreationTime == null ? -1 : x.CreationTime.Value.CompareTo(y.CreationTime.Value)));
+                filesToMove.Sort((x, y) => x.CreationTime == null ? (y.CreationTime == null ? 0 : +1) : (y.CreationTime == null ? -1 : x.CreationTime.Value.CompareTo(y.CreationTime.Value)));
 
                 var curSubFolder = "";
                 var numFilesInCurFolder = MIN_FILES_PER_FOLDER + 1;
-                foreach (var fileSpec in fileDaSpostare)
+                foreach (var fileSpec in filesToMove)
                 {
                     var nextSubfolder = GuessSubfolderName(fileSpec);
                     if (numFilesInCurFolder > MIN_FILES_PER_FOLDER && nextSubfolder != curSubFolder)
                     {
-                        Directory.CreateDirectory(Path.Combine(localFolder, curSubFolder));
+                        Directory.CreateDirectory(Path.Combine(fileSpec.DirectoryName(), curSubFolder));
                         curSubFolder = nextSubfolder;
                         numFilesInCurFolder = 0;
                     }

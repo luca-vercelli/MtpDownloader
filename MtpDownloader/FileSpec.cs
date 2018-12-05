@@ -14,14 +14,15 @@ namespace MtpDownloader
     public class FileSpec
     {
         public string FullFilename;
-        public string ContentHash;
-        public bool IsImage = false;
-        public bool IsVideo = false;
-        public int Width = -1;
-        public int Height = -1;
-        public int ColorDepth = -1;
-        public int UsedColors = -1;
         public DateTime? CreationTime = null;
+        public string _ContentHash = null;
+        public bool? _IsImage = null;
+        public bool? _IsDrawImage = null;
+        public bool? _IsVideo = null;
+        public int? _Width = null;
+        public int? _Height = null;
+        public int? _ColorDepth = null;
+        public int? _UsedColors = null;
 
         //TODO what are used files extensions on smartphones?
         public static string[] imgExtensions = new string[] { "bmp", "jpg", "jpeg", "png", "gif" };
@@ -34,21 +35,6 @@ namespace MtpDownloader
         {
             FullFilename = fullLocalFilename;
             CreationTime = creationTime;
-
-            CalculateIsImage();
-            if (IsImage)
-            {
-                Image image = Image.FromFile(fullLocalFilename);
-                Width = image.Width;
-                Height = image.Height;
-                CalculateColorDepth(image);
-            }
-            else
-            {
-                CalculateIsVideo();
-            }
-
-            CalculateContentHash();
         }
 
         /// <summary>
@@ -70,7 +56,7 @@ namespace MtpDownloader
         /// <summary>
         /// Return the full path of the folder containing this file (right?)
         /// </summary>
-        public string Folder()
+        public string DirectoryName()
         {
             return Path.GetDirectoryName(FullFilename);
         }
@@ -90,7 +76,7 @@ namespace MtpDownloader
         /// </summary>
         public void MoveUnder(string subfolder)
         {
-            var newFullname = Path.Combine(Folder(), subfolder, Filename());
+            var newFullname = Path.Combine(DirectoryName(), subfolder, Filename());
             File.Move(FullFilename, newFullname);
             FullFilename = newFullname;
         }
@@ -98,17 +84,83 @@ namespace MtpDownloader
         /// <summary>
         /// Guess if this file is a video, looking at its extension.
         /// </summary>
-        private void CalculateIsVideo()
+        public bool IsVideo()
         {
-            IsVideo = videoExtensions.Contains(Extension());
+            if (_IsVideo == null)
+            {
+                _IsVideo = videoExtensions.Contains(Extension());
+                if (_IsVideo.Value)
+                {
+                    _IsImage = false;
+                }
+            }
+            return _IsVideo.Value;
         }
 
         /// <summary>
         /// Guess if this file is an image, looking at its extension.
         /// </summary>
-        private void CalculateIsImage()
+        public bool IsImage()
         {
-            IsImage = imgExtensions.Contains(Extension());
+            if (_IsImage == null)
+            {
+                _IsVideo = imgExtensions.Contains(Extension());
+                if (_IsImage.Value)
+                {
+                    _IsVideo = false;
+                }
+            }
+            return _IsImage.Value;
+        }
+
+        /// <summary>
+        /// Populate _Width, _Height, _ColorDepth.
+        /// </summary>
+        private void CalculateImageProperties()
+        {
+            Image image = Image.FromFile(FullFilename);
+            _Width = image.Width;
+            _Height = image.Height;
+
+            //Now calculate _ColorDepth
+            switch (image.PixelFormat)
+            {
+                case PixelFormat.Format64bppArgb:
+                case PixelFormat.Format64bppPArgb:
+                    _ColorDepth = 64;
+                    break;
+                case PixelFormat.Format48bppRgb:
+                    _ColorDepth = 48;
+                    break;
+                case PixelFormat.Canonical:
+                case PixelFormat.Format32bppArgb:
+                case PixelFormat.Format32bppPArgb:
+                case PixelFormat.Format32bppRgb:
+                    _ColorDepth = 32;
+                    break;
+                case PixelFormat.Format24bppRgb:
+                    _ColorDepth = 24;
+                    break;
+                case PixelFormat.Format16bppArgb1555:
+                case PixelFormat.Format16bppGrayScale:
+                case PixelFormat.Format16bppRgb555:
+                case PixelFormat.Format16bppRgb565:
+                    _ColorDepth = 16;
+                    break;
+                case PixelFormat.Format8bppIndexed:
+                    _ColorDepth = 8;
+                    break;
+                case PixelFormat.Format4bppIndexed:
+                    _ColorDepth = 4;
+                    break;
+                case PixelFormat.Format1bppIndexed:
+                    _ColorDepth = 1;
+                    break;
+                default:
+                    _ColorDepth = -1;
+                    break;
+            }
+            //TODO what is the correct way to force loaded image into "garbage" ?
         }
 
         /// <summary>
@@ -116,76 +168,89 @@ namespace MtpDownloader
         /// </summary>
         public bool IsLogo()
         {
-            return IsImage && ColorDepth <= 8;
-        }
-
-        private void CalculateColorDepth(Image image)
-        {
-            switch (image.PixelFormat)
+            if (_IsDrawImage == null)
             {
-                case PixelFormat.Format64bppArgb:
-                case PixelFormat.Format64bppPArgb:
-                    ColorDepth = 64;
-                    break;
-                case PixelFormat.Format48bppRgb:
-                    ColorDepth = 48;
-                    break;
-                case PixelFormat.Canonical:
-                case PixelFormat.Format32bppArgb:
-                case PixelFormat.Format32bppPArgb:
-                case PixelFormat.Format32bppRgb:
-                    ColorDepth = 32;
-                    break;
-                case PixelFormat.Format24bppRgb:
-                    ColorDepth = 24;
-                    break;
-                case PixelFormat.Format16bppArgb1555:
-                case PixelFormat.Format16bppGrayScale:
-                case PixelFormat.Format16bppRgb555:
-                case PixelFormat.Format16bppRgb565:
-                    ColorDepth = 16;
-                    break;
-                case PixelFormat.Format8bppIndexed:
-                    ColorDepth = 8;
-                    break;
-                case PixelFormat.Format4bppIndexed:
-                    ColorDepth = 4;
-                    break;
-                case PixelFormat.Format1bppIndexed:
-                    ColorDepth = 1;
-                    break;
-                default:
-                    ColorDepth = -1;  //UNKNOWN
-                    break;
+                _IsDrawImage = IsImage() && ColorDepth() <= 8 && ColorDepth() > 8;
             }
+            return _IsDrawImage.Value;
         }
 
-        private void CalculateContentHash()
+        /// <summary>
+        /// Number of color bits, currently in range [1-64]. -1 means "unknown".
+        /// </summary>
+        public int ColorDepth()
         {
-
-            using (var md5 = MD5.Create())
+            if (_ColorDepth == null)
             {
-                using (var stream = File.OpenRead(FullFilename))
+                CalculateImageProperties();
+            }
+            return _ColorDepth.Value;
+        }
+
+        /// <summary>
+        /// Image width.
+        /// </summary>
+        public int Width()
+        {
+            if (_Width == null)
+            {
+                CalculateImageProperties();
+            }
+            return _Width.Value;
+        }
+
+        /// <summary>
+        /// Image height.
+        /// </summary>
+        public int Height()
+        {
+            if (_Height == null)
+            {
+                CalculateImageProperties();
+            }
+            return _Height.Value;
+        }
+
+        /// <summary>
+        /// MD5 hash of full file content.
+        /// </summary>
+        public string ContentHash()
+        {
+            if (_ContentHash == null)
+            {
+                using (var md5 = MD5.Create())
                 {
-                    var hash = md5.ComputeHash(stream);
-                    ContentHash = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    using (var stream = File.OpenRead(FullFilename))
+                    {
+                        var hash = md5.ComputeHash(stream);
+                        _ContentHash = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    }
                 }
             }
+            return _ContentHash;
         }
 
-        //TODO not used yet
-        private void CalculateUsedColors(Bitmap image)
+        /// <summary>
+        /// MD5 hash of full file content.
+        /// 
+        /// Not used yet.
+        /// </summary>
+        public int UsedColors(Bitmap image)
         {
-            var cnt = new HashSet<System.Drawing.Color>();
+            if (_UsedColors == null)
+            {
+                var cnt = new HashSet<System.Drawing.Color>();
 
-            for (int x = 0; x < image.Width; x++)
-                for (int y = 0; y < image.Height; y++)
-                {
-                    var pixel = image.GetPixel(x, y);
-                    cnt.Add(pixel);
-                }
+                for (int x = 0; x < image.Width; x++)
+                    for (int y = 0; y < image.Height; y++)
+                    {
+                        var pixel = image.GetPixel(x, y);
+                        cnt.Add(pixel);
+                    }
 
-            UsedColors = cnt.Count;
+                _UsedColors = cnt.Count;
+            }
+            return _UsedColors.Value;
         }
     }
 }

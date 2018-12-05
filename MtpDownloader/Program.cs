@@ -43,7 +43,6 @@ namespace MtpDownloader
         public DateTime maxDate;
         public bool removeDuplicates = false;
         public bool splitFolders = false;
-        public bool count = false;
         public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
@@ -260,7 +259,7 @@ namespace MtpDownloader
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
                 { "ld|list-devices", "List devices (i.e. their Description)", v => actions.Add(Action.ListDevices) },
                 { "cp|copy=", "Copy device files to PC folder", v => { actions.Add(Action.DownloadFiles); localFolder = v; } },
-                { "c|count", "Give file count", v => { actions.Add(Action.CountFiles); count = true; } },
+                { "c|count", "Print file count", v => actions.Add(Action.CountFiles) },
                 { "v|version", "Print program version", v => actions.Add(Action.PrintVersion) },
                 { "h|help",  "Print this message", v => actions.Add(Action.PrintHelp) },
                 };

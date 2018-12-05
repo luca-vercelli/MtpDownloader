@@ -297,6 +297,11 @@ namespace MtpDownloader
                     errorsInCommandLine = true;
                 }
 
+                if ((removeDuplicates || splitFolders) && !actions.Contains(Action.DownloadFiles))
+                {
+                    Console.Error.WriteLine("Options -rd and -sp are meaningless without -cp");
+                }
+
                 if (actions.Count == 0)
                 {
                     actions.Add(Action.PrintHelp);

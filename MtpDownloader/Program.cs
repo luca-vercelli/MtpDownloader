@@ -21,7 +21,7 @@ using NDesk.Options;
 /// </summary>
 namespace MtpDownloader
 {
-    public enum Action { PrintHelp, PrintVersion, ListDevices, ListFiles, DownloadFiles, DeleteFiles }
+    public enum Action { PrintHelp, PrintVersion, ListDevices, ListFiles, DownloadFiles, DeleteFiles, CountFiles }
 
     class Program
     {
@@ -39,8 +39,11 @@ namespace MtpDownloader
         public bool recursive = false;
         public bool useMinDate = false;
         public DateTime minDate;
+        public bool useMaxDate = false;
+        public DateTime maxDate;
         public bool removeDuplicates = false;
         public bool splitFolders = false;
+        public bool count = false;
         public List<string> remoteFolders = new List<string>();
         public string localFolder = null;
         public bool errorsInCommandLine = false;
@@ -125,6 +128,13 @@ namespace MtpDownloader
                 // In this case, "filenames = GetAllRemoteFilesNames" succedes, however  "foreach (var f in filenames)" will raise Exception:
                 // System.Runtime.InteropServices.COMException: Libreria, unità o pool di supporti vuoto. (Eccezione da HRESULT: 0x800710D2)
                 var filenames = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive);
+
+                if (actions.Contains(Action.CountFiles))
+                {
+                    //count is written /before/ the full list is written.
+                    int count = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive).Count();
+                    Console.Error.WriteLine(count + " files found.");
+                }
 
                 if (actions.Contains(Action.ListFiles))
                 {
@@ -221,7 +231,7 @@ namespace MtpDownloader
         void PrintUsage(OptionSet p)
         {
             Console.Error.WriteLine("Usage: ");
-            Console.Error.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd] [-sp]]");
+            Console.Error.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-max-days DAYS|-s DATE] [-min-days DAYS|-b DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd] [-sp]]");
             Console.Error.WriteLine("   " + PROGRAM_NAME + " -ld");
             Console.Error.WriteLine("   " + PROGRAM_NAME + " -v");
             Console.Error.WriteLine("   " + PROGRAM_NAME + " -h");
@@ -239,8 +249,10 @@ namespace MtpDownloader
             var p = new OptionSet() {
                 { "d|device=", "Select device by {DESCRIPTION}", v => deviceDescription = v },
                 { "p|pattern=", "Select only files matching given {PATTERN}", v => fileNamePattern = v },
-                { "days=", "Select only files at most {DAYS} days old", (long v) => { minDate = DateTime.Today.AddDays(-v); useMinDate = true; } },
+                { "max-days=", "Select only files at most {DAYS} days old", (long v) => { minDate = DateTime.Today.AddDays(-v); useMinDate = true; } },
                 { "s|since=", "Select only files not older than {DATE}", v => { minDate = DateTime.Parse(v); useMinDate = true;        }    },
+                { "min-days=", "Select only files at least {DAYS} days old", (long v) => { maxDate = DateTime.Today.AddDays(-v); useMaxDate = true; } },
+                { "b|before=", "Select only files not younger than {DATE}", v => { maxDate = DateTime.Parse(v); useMaxDate = true;        }    },
                 { "r|recursive", "Recursive search", v => recursive = true  },
                 { "sp|split", "Split destination folders", v => splitFolders = true  },
                 { "rd|remove-duplicates", "Remove duplicates while downloading", v => removeDuplicates = true  },
@@ -248,6 +260,7 @@ namespace MtpDownloader
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
                 { "ld|list-devices", "List devices (i.e. their Description)", v => actions.Add(Action.ListDevices) },
                 { "cp|copy=", "Copy device files to PC folder", v => { actions.Add(Action.DownloadFiles); localFolder = v; } },
+                { "c|count", "Give file count", v => { actions.Add(Action.CountFiles); count = true; } },
                 { "v|version", "Print program version", v => actions.Add(Action.PrintVersion) },
                 { "h|help",  "Print this message", v => actions.Add(Action.PrintHelp) },
                 };
@@ -323,20 +336,11 @@ namespace MtpDownloader
         {
             var directoryInfo = myDevice.GetDirectoryInfo(remoteFolder);
             var files = directoryInfo.EnumerateFiles(fileNamePattern);
-            if (useMinDate)
+            foreach (var f in files)
             {
-                foreach (var f in files)
-                {
-                    if (f.CreationTime >= minDate)
-                        yield return f.Name;
-                }
-            }
-            else
-            {
-                foreach (var f in files)
-                {
-                    yield return f.Name;
-                }
+                if (useMinDate && f.CreationTime < minDate) continue;
+                if (useMaxDate && f.CreationTime > maxDate) continue;
+                yield return f.Name;
             }
             if (recursive)
             {

@@ -5,21 +5,20 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Xml.Serialization;
 using MediaDevices;
 using NDesk.Options;
 
-/**
- * MTP devices may have many "storage capabilities", each on with his own file system.
- * 
- * Instead, MediaDevices library will show these file systems as different folders under the device root folder.
- * 
- * Each storage, each folder and each file is internally identified by an ID, which is quite useless for the user (e.g."o32D9")
- * 
- * Each device is identified by some terribly long DeviceId; we prefer identify them by Description.
- * 
- * A configuration file is created and read from AppData\Local
- */
+/// <summary>
+/// Transfer content fro portable devices to PC via MTP/WPD protocol.
+/// 
+/// MTP devices may have many "storage capabilities", each on with his own file system. 
+/// Instead, MediaDevices library will show these file systems as different folders under the device root folder.
+/// 
+/// Each storage, each folder and each file is internally identified by an ID, which is quite useless for the user (e.g."o32D9").
+/// 
+/// Each device is identified by some terribly long DeviceId; we prefer identify them by Description.
+/// 
+/// </summary>
 namespace MtpDownloader
 {
     public enum Action { PrintHelp, PrintVersion, ListDevices, ListFiles, DownloadFiles, DeleteFiles }
@@ -30,7 +29,7 @@ namespace MtpDownloader
         public const string VERSION = "0.1";
         public const string LOGO_SUBFOLDER = "logo";
         public const string VIDEO_SUBFOLDER = "video";
-        public const int MAX_FILES = 200;
+        public const int MAX_FILES_PER_FOLDER = 200;
 
         //command line options
         OptionSet optionSet;
@@ -390,7 +389,7 @@ namespace MtpDownloader
             Directory.CreateDirectory(Path.Combine(localFolder, VIDEO_SUBFOLDER));
             foreach (var fileSpec in database.Values)
             {
-                if (fileSpec.IsVideo())
+                if (fileSpec.IsVideo)
                 {
                     fileSpec.MoveUnder(VIDEO_SUBFOLDER);
                 }
@@ -398,7 +397,7 @@ namespace MtpDownloader
         }
 
         /// <summary>
-        /// Put files into many subdirectories, by date, with at most MAX_FILES files per each
+        /// Put files into many subdirectories, by date, with at most MAX_FILES_PRE_FOLDER files per each
         /// </summary>
         void SplitFilesInSmallFolders(Dictionary<string, FileSpec> database)
         {
@@ -413,10 +412,12 @@ namespace MtpDownloader
     {
         public string FullFilename;
         public string ContentHash;
-        public int Width;
-        public int Height;
-        public int ColorDepth;
-        public int UsedColors;
+        public bool IsImage = false;
+        public bool IsVideo = false;
+        public int Width = -1;
+        public int Height = -1;
+        public int ColorDepth = -1;
+        public int UsedColors = -1;
 
         //TODO what are used files extensions on smartphones?
         public static string[] imgExtensions = new string[] { "bmp", "jpg", "jpeg", "png", "gif" };
@@ -426,12 +427,17 @@ namespace MtpDownloader
         {
             FullFilename = fullFilename;
 
-            if (IsImage())
+            CalculateIsImage();
+            if (IsImage)
             {
                 Image image = Image.FromFile(fullFilename);
                 Width = image.Width;
                 Height = image.Height;
                 CalculateColorDepth(image);
+            }
+            else
+            {
+                CalculateIsVideo();
             }
 
             CalculateContentHash();
@@ -484,17 +490,17 @@ namespace MtpDownloader
         /// <summary>
         /// Guess if this file is a video, looking at its extension.
         /// </summary>
-        public bool IsVideo()
+        private void CalculateIsVideo()
         {
-            return videoExtensions.Contains(Extension());
+            IsVideo = videoExtensions.Contains(Extension());
         }
 
         /// <summary>
         /// Guess if this file is an image, looking at its extension.
         /// </summary>
-        public bool IsImage()
+        private void CalculateIsImage()
         {
-            return imgExtensions.Contains(Extension());
+            IsImage = imgExtensions.Contains(Extension());
         }
 
         /// <summary>
@@ -502,7 +508,7 @@ namespace MtpDownloader
         /// </summary>
         public bool IsLogo()
         {
-            return IsImage() && ColorDepth <= 8;
+            return IsImage && ColorDepth <= 8;
         }
 
         private void CalculateColorDepth(Image image)

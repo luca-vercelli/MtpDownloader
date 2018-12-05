@@ -202,15 +202,15 @@ namespace MtpDownloader
         /// </summary>
         void PrintUsage(OptionSet p)
         {
-            Console.WriteLine("Usage: ");
-            Console.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd] [-sp]]");
-            Console.WriteLine("   " + PROGRAM_NAME + " -ld");
-            Console.WriteLine("   " + PROGRAM_NAME + " -v");
-            Console.WriteLine("   " + PROGRAM_NAME + " -h");
-            Console.WriteLine("Download files from MTP source.");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            p.WriteOptionDescriptions(Console.Out);
+            Console.Error.WriteLine("Usage: ");
+            Console.Error.WriteLine("   " + PROGRAM_NAME + " [-d DEVICE] [-p PATTERN] [-days DAYS] [-s DATE] [-delete] [-r] [-l] remotepath1 [remotepath2 ...] [-cp localpath [-rd] [-sp]]");
+            Console.Error.WriteLine("   " + PROGRAM_NAME + " -ld");
+            Console.Error.WriteLine("   " + PROGRAM_NAME + " -v");
+            Console.Error.WriteLine("   " + PROGRAM_NAME + " -h");
+            Console.Error.WriteLine("Download files from MTP source.");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("Options:");
+            p.WriteOptionDescriptions(Console.Error);
         }
 
         /// <summary>

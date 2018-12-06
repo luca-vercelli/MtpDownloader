@@ -1,7 +1,7 @@
 #this can be used to compile under Linux. However the program will not work under Linux.
 
 compile:
-	mcs -reference:bin/NDesk.Options.dll -reference:bin/MediaDevices.dll MtpDownloader/Program.cs MtpDownloader/Ini.cs MtpDownloader/Properties/AssemblyInfo.cs -out:bin/MtpDownloader.exe
+	mcs -reference:System.Drawing.dll -reference:bin/NDesk.Options.dll -reference:bin/MediaDevices.dll MtpDownloader/Program.cs MtpDownloader/FileSpec.cs MtpDownloader/Properties/AssemblyInfo.cs -out:bin/MtpDownloader.exe
 
 wget:
 	mkdir -p packages

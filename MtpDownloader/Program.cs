@@ -115,92 +115,74 @@ namespace MtpDownloader
                 }
                 myDevice.Connect();
 
-                // FIXME
-                // Even if device is connected, it could have not authorized external access yet.
-                // (Windows will show an empty device.)
-                // In this case, "filenames = GetAllRemoteFilesNames" succedes, however  "foreach (var f in filenames)" will raise Exception:
-                // System.Runtime.InteropServices.COMException: Libreria, unità o pool di supporti vuoto. (Eccezione da HRESULT: 0x800710D2)
                 var files = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive);
+
+                var count = 1; //any default number >0
 
                 if (actions.Contains(Action.CountFiles))
                 {
                     //count is written /before/ the full list is written.
-                    int count = GetAllRemoteFilesNames(myDevice, remoteFolders, recursive).Count();
+                    count = files.Count();
                     Console.Error.WriteLine(count + " files found.");
                 }
 
-                if (actions.Contains(Action.ListFiles))
+                var download = actions.Contains(Action.DownloadFiles);
+                var list = actions.Contains(Action.ListFiles);
+                var delete = actions.Contains(Action.DeleteFiles);
+
+                if (download)
                 {
+                    Directory.CreateDirectory(localFolder);
+                }
+
+                //please notice .Count() forces reading the whole directory
+                //so we don't want to check if .Count() > 0
+
+                if ((download || list || delete) && count > 0)
+                {
+
+                    var database = new Dictionary<string, FileSpec>();
+                    
                     Console.Error.WriteLine("Reading directory...");
+
+                    if (download && removeDuplicates) Console.Error.WriteLine("'rd' feature is in beta..."); //FIXME
 
                     foreach (var f in files)
                     {
-                        Console.WriteLine(f.Name);
+                        if (list)
+                        {
+                            Console.WriteLine(f.FullName);
+                        }
+
+                        if (download)
+                        {
+                            DownloadFiles(myDevice, f, database);
+                        }
+
+                        if (delete)
+                        {
+                            myDevice.DeleteFile(f.FullName);
+                        }
                     }
-                    if (!recursive)
+
+                    if (list && !recursive)
                     {
+                        // List folders, too
                         foreach (var foldername in GetAllRemoteFoldersNames(myDevice, remoteFolders, recursive))
                         {
                             Console.WriteLine(foldername);
                         }
                     }
-                }
 
-                if (actions.Contains(Action.DownloadFiles))
-                {
-                    Console.Error.WriteLine("'cp' feature is in beta..."); //FIXME
-                    if (removeDuplicates) Console.Error.WriteLine("'rd' feature is in beta..."); //FIXME
-
-                    var database = new Dictionary<string, FileSpec>();
-
-                    foreach (var f in files) //FIXME is this correct? can iterator be used more than once?
+                    if (download && splitFolders)
                     {
-                        var localFilename = Path.Combine(localFolder, f.Name.Substring(f.Name.LastIndexOf("\\") + 1));
-                        Console.Error.WriteLine("writing: " + localFilename);
-                        FileStream fs = File.Create(localFilename);
-                        myDevice.DownloadFile(f.Name, fs);
-
-                        FileSpec fspec = null;
-
-                        if (removeDuplicates || splitFolders)
-                        {
-                            fspec = new FileSpec(localFilename, f.CreationTime);
-                        }
-
-                        if (removeDuplicates)
-                        {
-                            if (database.ContainsKey(fspec.ContentHash()))
-                            {
-                                Console.Error.WriteLine("ignoring duplicate file: " + localFilename);
-                                File.Delete(localFilename);
-                            }
-                            else
-                            {
-                                database[fspec.ContentHash()] = fspec;
-                            }
-                        }
-                    }
-
-                    if (splitFolders)
-                    {
-                        Console.Error.WriteLine("'split' feature not implemented..."); //FIXME
+                        Console.Error.WriteLine("'split' feature is in beta..."); //FIXME
 
                         MoveLogoFiles(database);
                         MoveVideoFiles(database);
                         SplitFilesInSmallFolders(database);
                     }
-                }
 
-                if (actions.Contains(Action.DeleteFiles))
-                {
-                    //FIXME file should be deleted just after downloaded, if download is enabled
-                    Console.Error.WriteLine("'delete' feature not implemented yet..."); //FIXME
-
-                    foreach (var filename in files)
-                    {
-                        Console.Error.WriteLine("going to delete " + filename + "..."); //FIXME
-                        // myDevice.DeleteFile(filename);
-                    }
                 }
 
                 Console.Error.WriteLine("Done.");
@@ -243,16 +225,16 @@ namespace MtpDownloader
                 { "d|device=", "Select device by {DESCRIPTION}", v => deviceDescription = v },
                 { "p|pattern=", "Select only files matching given {PATTERN}", v => fileNamePattern = v },
                 { "max-days=", "Select only files at most {DAYS} days old", (long v) => minDate = DateTime.Today.AddDays(-v) },
-                { "s|since=", "Select only files not older than {DATE}", v => minDate = DateTime.Parse(v)    },
+                { "s|since=", "Select only files not older than {DATE}, in format YYYY-MM-DD", v => minDate = DateTime.Parse(v)    },
                 { "min-days=", "Select only files at least {DAYS} days old", (long v) => maxDate = DateTime.Today.AddDays(-v) },
-                { "b|before=", "Select only files not younger than {DATE}", v => maxDate = DateTime.Parse(v)    },
+                { "b|before=", "Select only files not younger than {DATE}, in format YYYY-MM-DD", v => maxDate = DateTime.Parse(v)    },
                 { "r|recursive", "Recursive search", v => recursive = true  },
                 { "sp|split", "Split destination folders", v => splitFolders = true  },
                 { "rd|remove-duplicates", "Remove duplicates while downloading", v => removeDuplicates = true  },
                 { "delete", "Delete selected files", v => actions.Add(Action.DeleteFiles) },
                 { "l|list|dir", "List device content", v => actions.Add(Action.ListFiles) },
                 { "ld|list-devices", "List devices (i.e. their Description)", v => actions.Add(Action.ListDevices) },
-                { "cp|copy=", "Copy device files to PC folder", v => { actions.Add(Action.DownloadFiles); localFolder = v; } },
+                { "cp|copy=", "Copy device files to PC folder.", v => { actions.Add(Action.DownloadFiles); localFolder = v; } },
                 { "c|count", "Print file count", v => actions.Add(Action.CountFiles) },
                 { "v|version", "Print program version", v => actions.Add(Action.PrintVersion) },
                 { "h|help",  "Print this message", v => actions.Add(Action.PrintHelp) },
@@ -388,6 +370,37 @@ namespace MtpDownloader
             {
                 foreach (var remoteSubfolder in GetRemoteFoldersNames(myDevice, remoteFolder, recursive))
                     yield return remoteSubfolder;
+            }
+        }
+
+        /// <summary>
+        /// Execute -cp action for file f. Update database if needed.
+        /// </summary>
+        private void DownloadFiles(MediaDevice device, MediaFileInfo f, Dictionary<string, FileSpec> database)
+        {
+            var localFilename = Path.Combine(localFolder, f.Name.Substring(f.Name.LastIndexOf("\\") + 1));
+            Console.Error.WriteLine("writing: " + localFilename); // DEBUG msg
+            FileStream fs = File.Create(localFilename);
+            device.DownloadFile(f.FullName, fs);
+
+            FileSpec fspec = null;
+
+            if (removeDuplicates || splitFolders)
+            {
+                fspec = new FileSpec(localFilename, f.CreationTime);
+            }
+
+            if (removeDuplicates)
+            {
+                if (database.ContainsKey(fspec.ContentHash()))
+                {
+                    Console.Error.WriteLine("ignoring duplicate file: " + localFilename);
+                    File.Delete(localFilename);
+                }
+                else
+                {
+                    database[fspec.ContentHash()] = fspec;
+                }
             }
         }
 

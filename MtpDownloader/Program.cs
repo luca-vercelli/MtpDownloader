@@ -279,6 +279,11 @@ namespace MtpDownloader
                     {
                         remoteFolders.AddRange(extraArgs);
                     }
+                    else if (actions.Count == 1 && actions.Contains(Action.ListFiles))
+                    {
+                        // useful exception
+                        remoteFolders.Add("\\");
+                    }
                     else
                     {
                         Console.Error.WriteLine("Missing argument.");

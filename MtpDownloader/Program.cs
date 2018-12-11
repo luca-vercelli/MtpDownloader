@@ -270,7 +270,7 @@ namespace MtpDownloader
             try
             {
                 List<string> extraArgs = optionSet.Parse(args);
-                Console.Error.WriteLine("DEBUG extraArgs=" + string.Join(", ", extraArgs));
+                // Console.Error.WriteLine("DEBUG extraArgs=" + string.Join(", ", extraArgs));
 
                 if (actions.Contains(Action.DownloadFiles) || actions.Contains(Action.ListFiles) || actions.Contains(Action.DeleteFiles))
                 {

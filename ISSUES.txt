@@ -1,0 +1,17 @@
+*  Even if device is connected, it could have not authorized external access yet.
+   (Windows will show an empty device.)
+   In this case, "filenames = GetAllRemoteFilesNames" succedes, however  "foreach (var f in filenames)" will raise Exception:
+   System.Runtime.InteropServices.COMException: Libreria, unità o pool di supporti vuoto. (Eccezione da HRESULT: 0x800710D2)
+
+* after -cp -delete , sometimes device gets stucked ?!?
+
+* -cp Existing files will be overwritten!!! override should be an option, and should check for duplicates
+
+* test -rd and -sp
+
+* date filtrers (i.e. -b and -s) should be done server side, not client side
+
+* MtpDownloader.exe -max-days 10 -c -l "\Phone\WhatsApp\Media\WhatsApp Images" -cp "%userprofile%\Pictures\Foto"
+   1 devices connected.
+   95 files found.
+   Eccezione non gestita: System.AccessViolationException: Tentativo di lettura o scrittura della memoria protetta. Spesso questa condizione indica che altre parti della memoria sono danneggiate.
